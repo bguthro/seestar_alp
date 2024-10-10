@@ -54,6 +54,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.device_script_result }}
+          tag_name: ${{ env.device_script_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -104,6 +105,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.device_script_result }}
+          tag_name: ${{ env.device_script_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
