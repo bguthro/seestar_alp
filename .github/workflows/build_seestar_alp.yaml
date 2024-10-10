@@ -25,8 +25,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           python -m pip install pyinstaller
-  
-          
+
       - name: run pyinstaller for seestar_alp
         id: create_seestar_alp
         run: |
@@ -40,17 +39,17 @@ jobs:
           echo "device_script_result=win_seestar_alp.zip" >> $env:GITHUB_ENV
           echo "device_script_version=$(git describe --tags --always --dirty)" >> $env:GITHUB_ENV
         shell: pwsh  
-  
+
       - name: Display Result
         run: echo "The script result is ${{ env.device_script_result }}"
         shell: pwsh
 
       - name: Upload Result as Asset
-        uses: actions/upload-artifact@v4
+        uses: softprops/action-gh-release@v2
         with:
-          name: SeeStarAlp-windows-${{ env.device_script_version }}
-          path: ${{ env.device_script_result }}
-        
+          files: ${{ env.device_script_result }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
   build-linux:
@@ -69,8 +68,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           python -m pip install pyinstaller
-  
-          
+
       - name: run pyinstaller for device
         id: create_device
         run: |
@@ -85,16 +83,17 @@ jobs:
           echo "device_script_result=linux_seestar_alp.zip" >> $GITHUB_ENV
           echo "device_script_version=$(git describe --tags --always --dirty)" >> $GITHUB_ENV
         shell: bash
-  
+
       - name: Display Result
         run: echo "The script result is ${{ env.device_script_result }}"
         shell: bash
-        
+
       - name: Upload Result as Asset
-        uses: actions/upload-artifact@v4
+        uses: softprops/action-gh-release@v2
         with:
-          name: SeeStarAlp-linux-${{ env.device_script_version }}
-          path: ${{ env.device_script_result }}
+          files: ${{ env.device_script_result }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 #  build-MacOS:
 #    runs-on: "MacOS-latest"
