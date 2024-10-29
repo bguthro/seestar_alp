@@ -64,6 +64,7 @@ function update() {
   fi
 
   git reset --hard ${rev_to_check}
+  exit 1
 
   cd ${src_home}
 
