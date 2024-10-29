@@ -32,6 +32,7 @@ function update() {
       -l | --latest )
         LATEST=true
         shift
+        ;;
       * )
         usage
         exit 1
