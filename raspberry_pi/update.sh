@@ -33,6 +33,10 @@ function update() {
         LATEST=true
         shift
         ;;
+      -- )
+          shift
+          break
+          ;;
       * )
         usage
         exit 1
