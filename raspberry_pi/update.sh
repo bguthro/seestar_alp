@@ -3,7 +3,7 @@ src_home=$(cd $(dirname $0)/.. && pwd)
 source ${src_home}/raspberry_pi/setup.sh
 
 function usage() {
-  cat <__EOF
+  cat <<__EOF
 usage: $0 [options]
   options:
     -f | --force     Force an update, even if up-to-date
