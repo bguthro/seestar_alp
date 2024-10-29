@@ -2,29 +2,65 @@
 src_home=$(cd $(dirname $0)/.. && pwd)
 source ${src_home}/raspberry_pi/setup.sh
 
+function usage() {
+  cat <__EOF
+usage: $0 [options]
+  options:
+    -f | --force     Force an update, even if up-to-date
+    -l | --latest    Use latest source code in tree, instead of the latest tag
+__EOF
+}
+
 function update() {
   validate_access
 
-  if [ "$1" = "--force" ]; then
-      FORCE=true
-  fi
+  OPTIONS=$(getopt -o frl --long "force,relaunch,latest" -n "$0" -- "$@")
+  eval set -- "$OPTIONS"
 
-  # internal parameter used to re-launch self with new source
-  if [ "$1" = "--relaunch" ]; then
-      FORCE=true
-      RELAUNCH=true
-  fi
+  while true; do
+    case "$1" in
+      -f | --force )
+        FORCE=true
+        shift
+        ;;
+      -r | --relaunch )
+        # Internal only
+        FORCE=true
+        RELAUNCH=true
+        shift
+        ;;
+      -l | --latest )
+        LATEST=true
+        shift
+      * )
+        usage
+        exit 1
+    esac
+  done
 
   # check if update is required
   cd "${src_home}"
-  git fetch origin
-  if [ $(git rev-parse HEAD) = $(git rev-parse @{u}) ] && [ "${FORCE}" != "true" ]; then
+  git fetch --tags
+
+  if [ "${LATEST}" = "true" ]; then
+    rev_to_check="@{u}"
+  else
+    rev_to_check=$(git tag | grep -v "\-g" | tail -1)
+  fi
+
+  if [ $(git rev-parse HEAD) = $(git rev-parse ${rev_to_check}) ] && [ "${FORCE}" != "true" ]; then
       echo "Nothing to do, you're already up-to-date!"
       exit 0
   fi
 
+  if ! git diff --quiet; then
+    echo "Working tree is dirty, aborting update"
+    exit 1
+  fi
+
+  git reset --hard ${rev_to_check}
+
   cd ${src_home}
-  git pull
 
   # Update script needs to relaunch itsself, to pick up source changes
   if [ -z "${RELAUNCH}" ]; then
