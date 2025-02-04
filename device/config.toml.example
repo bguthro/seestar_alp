@@ -47,6 +47,8 @@ is_EQ_mode = false
 guest_mode_init = true
 battery_low_limit = 3
 is_frame_calibrated = true
+darks_temp_recalibrate = false
+darks_temp_degrees = 6
 
 [logging]
 log_level = 'INFO'   #'WARN' only if trouble    #'INFO' to output more logging      #'DEBUG' still more output

@@ -78,7 +78,7 @@ class SensorTempWatch(EventCallback):
         self.triggered = False
         self.logger = device.logger
         self.logger.info("SensorTempWatch - init")
-        self.max_change = 6.0 # TODO: move this to a Config value once we use it for the scheduler
+        self.max_change = Config.darks_temp_degrees
 
         if "pi_status" in initial_state:
             self.temp = initial_state["pi_status"]["temp"]
@@ -95,9 +95,12 @@ class SensorTempWatch(EventCallback):
                 self.temp = curr_temp
             if abs(self.temp - curr_temp) > self.max_change and not self.eventFired:
                 self.logger.warn("SensorTempWatch: temp changed more than {self.max_change} degrees")
-                #
-                # TODO: tell scheduler to pause, and re-take darks
-                #
+                if device.can_pause_scheduler() and Config.darks_temp_recalibrate:
+                    device.pause_scheduler({})
+                    device.try_dark_frame()
+                    device.continue_scheduler({})
+                    self.temp = curr_temp
+
                 self.triggered = True
         #else:
         #    self.logger.info("SensorTempWatch Ignoring event {event_data}")

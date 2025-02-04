@@ -197,6 +197,8 @@ class _Config:
         self.is_EQ_mode: bool = self.get_toml(section, 'is_EQ_mode', False)
         self.battery_low_limit: int = self.get_toml(section, 'battery_low_limit', 3)
         self.is_frame_calibrated : bool = self.get_toml(section, 'is_frame_calibrated', True)
+        self.darks_temp_recalibrate : bool = self.get_toml(section, 'darks_temp_recalibrate', False)
+        self.darks_temp_degrees: int = self.get_toml(section, 'darks_temp_degrees', 6)
 
     def load_from_form(self, req):
         """
@@ -291,6 +293,8 @@ class _Config:
         self.set_toml('seestar_initialization', 'is_EQ_mode', 'is_EQ_mode' in req.media)
         self.set_toml('seestar_initialization', 'guest_mode_init', 'init_guest_mode' in req.media)
         self.set_toml('seestar_initialization', 'battery_low_limit', int(req.media['battery_low_limit']))
+        self.set_toml('seestar_initialization', 'darks_temp_recalibrate', 'darks_temp_recalibrate' in req.media)
+        self.set_toml('seestar_initialization', 'darks_temp_degrees', int(req.media['darks_temp_degrees']))
 
     def load_toml(self, load_name = None):
         """
@@ -573,7 +577,9 @@ class _Config:
                 self.render_text('scope_aim_lon', 'Scope aim longitude:', self.scope_aim_lon, 'Longitude to move thescope to for the startup sequence') + \
                 self.render_checkbox('is_EQ_mode', 'Scope in EQ Mode:', self.is_EQ_mode, 'Is the scope in equitorial mode') + \
                 self.render_checkbox('init_guest_mode', 'Claim guest mode control:', self.init_guest_mode, 'Claim guest mode on init') + \
-                self.render_text('battery_low_limit', 'Battery low limit percentage:', self.battery_low_limit, 'Lower limit for battery, before safe shutdown')
+                self.render_text('battery_low_limit', 'Battery low limit percentage:', self.battery_low_limit, 'Lower limit for battery, before safe shutdown') + \
+                self.render_checkbox('darks_temp_recalibrate', 'Retake darks on temp change:', self.darks_temp_recalibrate, 'Retake dark frames on temp change') + \
+                self.render_text('darks_temp_degrees', 'Max temp change before dark frame recalibration', self.darks_temp_degrees, 'Max temp change before dark frame recalibration')
             ) + \
             self.render_config_section('Seestar Devices',self.render_seestars(),'seestar_devices')
         return self._dict

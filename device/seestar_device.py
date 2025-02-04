@@ -145,9 +145,9 @@ class Seestar:
         return f"{type(self).__name__}(host={self.host}, port={self.port})"
 
     def update_scheduler_state_obj(self, item_state, result = 0):
-        self.event_state["scheduler"]  = {"Event":"Scheduler", 
+        self.event_state["scheduler"]  = {"Event":"Scheduler",
                                             "schedule_id": self.schedule['schedule_id'], "state":self.schedule['state'],
-                                            "item_number": self.schedule["item_number"], "cur_scheduler_item": item_state, 
+                                            "item_number": self.schedule["item_number"], "cur_scheduler_item": item_state,
                                             "is_stacking": self.schedule["is_stacking"], "is_stacking_paused": self.schedule["is_stacking_paused"],
                                             "result":result}
         self.logger.info(f"scheduler event state: {self.event_state['scheduler']}")
@@ -578,7 +578,7 @@ class Seestar:
                                                     "stack_lenhance": l_enhance,
                                                     "auto_3ppa_calib": True,
                                                     "auto_power_off" : False}
-        
+
         result = self.send_message_param_sync(data)
         self.logger.info(f"result for set setting: {result}")
 
@@ -590,7 +590,7 @@ class Seestar:
                                                     "stack":{"dbe":False},
                                                     "frame_calib": is_frame_calibrated}})
         self.logger.info(f"result for set setting for dbe and auto frame_calib: {result}")
-        
+
         response = self.send_message_param_sync({"method":"get_setting"})
         self.logger.info(f"get setting response: {response}")
 
@@ -1177,7 +1177,7 @@ class Seestar:
         if "gain" in params:
             stack_gain = params["gain"]
             result = self.send_message_param_sync({"method": "set_control_value", "params": ["gain", stack_gain]})
-            self.logger.info(result)           
+            self.logger.info(result)
         return not "error" in result
 
     def get_last_image(self, params):
@@ -1561,16 +1561,19 @@ class Seestar:
                 self.schedule['state'] = "complete"
                 self.play_sound(82)
 
+    def can_pause_scheduler(self):
+        return self.schedule['state'] == "working" and self.schedule['is_stacking'] and not self.schedule['is_stacking_paused']
+
     def pause_scheduler(self, params):
         self.logger.info("pausing scheduler...")
-        if self.schedule['state'] == "working" and self.schedule['is_stacking'] and not self.schedule['is_stacking_paused']:
+        if self.can_pause_scheduler():
             self.schedule['is_stacking_paused'] = True
             self.logger.info("confirmed scheduler is stacking, so stop for further instrctions.")
             return self.stop_stack()
         else:
             self.logger.warn("scheduler is not stacking, so nothing to pause")
             return self.json_result("pause_scheduler", -1, "Scheduler is not stacking.")
-        
+
     def continue_scheduler(self, params):
         self.logger.info("continue scheduler...")
         if self.schedule['state'] == "working" and not self.schedule['is_stacking'] and self.schedule['is_stacking_paused']:
@@ -1584,7 +1587,7 @@ class Seestar:
         else:
             self.logger.warn("scheduler was not paused, so nothing to do")
             return self.json_result("pause_scheduler", -1, "Scheduler was not paused stacking.")
-        
+
     def skip_scheduler_cur_item(self, params):
         self.logger.info("skipping scheduler item...")
         if self.schedule['state'] == "working" and self.schedule['is_skip_requested'] == False:
@@ -1791,9 +1794,9 @@ class Seestar:
                         self.schedule['state'] = "stopped"
                         return
                     if self.schedule['is_skip_requested']:
-                        self.logger.info("current mosaic was requested to skip. Stopping at current mosaic.")  
+                        self.logger.info("current mosaic was requested to skip. Stopping at current mosaic.")
                         return
-                    
+
                     # check if we are doing a subset of the panels
                     panel_string = str(index_ra + 1) + str(index_dec + 1)
                     if is_use_selected_panels and panel_string not in panel_set:
@@ -1879,7 +1882,7 @@ class Seestar:
                         elif self.schedule['is_skip_requested']:
                             self.logger.info("current mosaic stacking was requested to skip. Stopping at current mosaic.")
                             return
-                        
+
                         time.sleep(5)
                         panel_remaining_time_s -= 5
                         item_remaining_time_s -= 5
@@ -2362,8 +2365,9 @@ class Seestar:
         self.logger.info(f'event_callback_init({self}, {initial_state})')
         self.event_callbacks = [
             BatteryWatch(self, initial_state),
-            #SensorTempWatch(self, initial_state)
         ]
+        if Config.darks_temp_recalibrate:
+            self.event_callbacks.append(SensorTempWatch(self, initial_state))
 
         # read files in user_triggers subdir, and read json
         user_hooks = []
