@@ -29,6 +29,7 @@ from device.config import Config
 from device.version import Version # type: ignore
 from device.seestar_util import Util
 from device.event_callbacks import *
+from device.scopinator_bridge import ScopinatorBridge, ScopinatorCallError
 
 from collections import OrderedDict
 
@@ -76,8 +77,20 @@ class Seestar:
         return super().__new__(cls)
 
     # <ip_address> <port> <device name> <device num>
-    def __init__(self, logger, host: str, port: int, device_name: str, device_num: int, is_EQ_mode: bool,
-                 is_debug=False):
+    def __init__(
+        self,
+        logger,
+        host: str,
+        port: int,
+        device_name: str,
+        device_num: int,
+        is_EQ_mode: bool,
+        is_debug=False,
+        *,
+        use_scopinator: bool = False,
+        scopinator_prefer: bool = False,
+        scopinator_timeout: int = 15,
+    ):
         logger.info(
             f"Initialize the new instance of Seestar: {host}:{port}, name:{device_name}, num:{device_num}, is_EQ_mode:{is_EQ_mode}, is_debug:{is_debug}")
 
@@ -96,6 +109,10 @@ class Seestar:
         self.get_msg_thread: Optional[threading.Thread] = None
         self.heartbeat_msg_thread: Optional[threading.Thread] = None
         self.is_debug: bool = is_debug
+        self.use_scopinator: bool = use_scopinator
+        self.scopinator_prefer: bool = scopinator_prefer
+        self.scopinator_timeout: int = scopinator_timeout
+        self._scopinator_bridge = None
         self.response_dict: OrderedDict[int, dict] = FixedSizeOrderedDict(max=100)
         self.logger = logger
         self.is_connected: bool = False
@@ -140,6 +157,21 @@ class Seestar:
         self.is_EQ_mode: bool = is_EQ_mode
         # self.trace = MessageTrace(self.device_num, self.port)
 
+        if self.use_scopinator:
+            self._scopinator_bridge = ScopinatorBridge.create(
+                logger,
+                host,
+                port,
+                device_name,
+                prefer=scopinator_prefer,
+                timeout=scopinator_timeout,
+            )
+            if self._scopinator_bridge is None:
+                self.logger.info(
+                    "Scopinator integration requested for %s but is not available; falling back to socket transport",
+                    self.device_name,
+                )
+
     # scheduler state example: {"state":"working", "schedule_id":"abcdefg",
     #       "result":0, "error":"dummy error",
     #       "cur_schedule_item":{   "type":"mosaic", "schedule_item_GUID":"abcde", "state":"working",
@@ -176,11 +208,15 @@ class Seestar:
             if self.s is None:
                 self.logger.warn("socket not initialized!")
                 time.sleep(3)
+                if self._try_scopinator_raw(data):
+                    return True
                 return False
             # todo : don't send if not connected or socket is null?
             self.s.sendall(data.encode())  # TODO: would utf-8 or unicode_escaped help here
             return True
         except socket.timeout:
+            if self._try_scopinator_raw(data):
+                return True
             return False
         except socket.error as e:
             # Don't bother trying to recover if watch events is False
@@ -188,9 +224,13 @@ class Seestar:
             self.disconnect()
             if self.is_watch_events and self.reconnect():
                 return self.send_message(data)
+            if self._try_scopinator_raw(data):
+                return True
             return False
         except:
             self.logger.error(f"General error trying to send message: ", data)
+            if self._try_scopinator_raw(data):
+                return True
             return False
 
     def socket_force_close(self) -> None:
@@ -395,27 +435,76 @@ class Seestar:
                     first_index = msg_remainder.find("\r\n")
             time.sleep(0.1)
 
+    def _log_outgoing(self, method: Optional[str], json_data: str) -> None:
+        if method == 'scope_get_equ_coord':
+            self.logger.debug(f'sending: {json_data}')
+        else:
+            self.logger.debug(f'sending: {json_data}')
+
+    def _prepare_command_payload(self, data: MessageParams) -> tuple[dict[str, Any], int, str]:
+        payload = dict(data)
+        cur_cmdid = payload.get('id') or self.cmdid
+        payload['id'] = cur_cmdid
+        data['id'] = cur_cmdid
+        self.cmdid += 1
+        json_data = json.dumps(payload)
+        self._log_outgoing(payload.get('method'), json_data)
+        return payload, cur_cmdid, json_data
+
+    def _try_scopinator_raw(self, data: str) -> bool:
+        if not self._scopinator_bridge:
+            return False
+        try:
+            self._scopinator_bridge.send_raw(data)
+            return True
+        except ScopinatorCallError as exc:
+            self.logger.debug(f"Scopinator raw send failed: {exc}")
+            return False
+
+    def _try_scopinator_async(self, payload: dict[str, Any]) -> bool:
+        if not self._scopinator_bridge:
+            return False
+        try:
+            self._scopinator_bridge.call_async(payload)
+            return True
+        except ScopinatorCallError as exc:
+            self.logger.warning(f"Scopinator async call failed: {exc}")
+            return False
+
+    def _try_scopinator_sync(self, payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+        if not self._scopinator_bridge:
+            return None
+        try:
+            result = self._scopinator_bridge.call_sync(payload)
+            if isinstance(result, dict):
+                return result
+            if result is None:
+                return None
+            return {"result": result}
+        except ScopinatorCallError as exc:
+            self.logger.warning(f"Scopinator sync call failed: {exc}")
+            return None
+
     def json_message(self, instruction: str, **kwargs):
         data = {"id": self.cmdid, "method": instruction, **kwargs}
         self.cmdid += 1
         json_data = json.dumps(data)
-        if instruction == 'scope_get_equ_coord':
-            self.logger.debug(f'sending: {json_data}')
-        else:
-            self.logger.debug(f'sending: {json_data}')
+        self._log_outgoing(instruction, json_data)
         self.send_message(json_data + "\r\n")
 
     def send_message_param(self, data: MessageParams) -> int:
-        cur_cmdid = data.get('id') or self.cmdid
-        data['id'] = cur_cmdid
-        self.cmdid += 1  # can this overflow?  not in JSON...
-        json_data = json.dumps(data)
-        if 'method' in data and data['method'] == 'scope_get_equ_coord':
-            self.logger.debug(f'sending: {json_data}')
-        else:
-            self.logger.debug(f'sending: {json_data}')
+        payload, cur_cmdid, json_data = self._prepare_command_payload(data)
 
-        self.send_message(json_data + "\r\n")
+        sent = False
+        if self.scopinator_prefer and self._try_scopinator_async(payload):
+            sent = True
+
+        if not sent:
+            sent = self.send_message(json_data + "\r\n")
+
+        if not sent and not self.scopinator_prefer:
+            self._try_scopinator_async(payload)
+
         return cur_cmdid
 
     def shut_down_thread(self, data):
@@ -429,11 +518,25 @@ class Seestar:
         cur_cmdid = self.send_message_param(data)
 
     def send_message_param_sync(self, data: MessageParams):
-        if data['method'] == 'pi_shutdown' or data['method'] == 'pi_reboot':
+        method_name = data.get('method')
+        if method_name in ['pi_shutdown', 'pi_reboot']:
             threading.Thread(name=f"shutdown-thread:{self.device_name}", target=lambda: self.shut_down_thread(data)).start()
-            return {'method': data['method'], 'result': "Sent command async for these types of commands." }
-        else:
-            cur_cmdid = self.send_message_param(data)
+            return {'method': method_name, 'result': "Sent command async for these types of commands." }
+
+        payload, cur_cmdid, json_data = self._prepare_command_payload(data)
+
+        if self.scopinator_prefer:
+            result = self._try_scopinator_sync(payload)
+            if result is not None:
+                self.response_dict[cur_cmdid] = result
+                return result
+
+        sent = self.send_message(json_data + "\r\n")
+        if not sent:
+            fallback = self._try_scopinator_sync(payload)
+            if fallback is not None:
+                self.response_dict[cur_cmdid] = fallback
+                return fallback
 
         start = time.time()
         last_slow = start
@@ -443,15 +546,22 @@ class Seestar:
                 elapsed = now - start
                 last_slow = now
                 if elapsed > 10:
-                    self.logger.error(f'Failed to wait for message response.  {elapsed} seconds. {cur_cmdid=} {data=}')
-                    data['result'] = "Error: Exceeded allotted wait time for result"
-                    return data
+                    self.logger.error(f'Failed to wait for message response.  {elapsed} seconds. {cur_cmdid=} {payload=}')
+                    if not self.scopinator_prefer:
+                        alt = self._try_scopinator_sync(payload)
+                        if alt is not None:
+                            self.response_dict[cur_cmdid] = alt
+                            return alt
+                    payload['result'] = "Error: Exceeded allotted wait time for result"
+                    return payload
                 else:
-                    self.logger.warn(f'SLOW message response.  {elapsed} seconds. {cur_cmdid=} {data=}')
+                    self.logger.warn(f'SLOW message response.  {elapsed} seconds. {cur_cmdid=} {payload=}')
                     # todo : dump out stats.  last run time on threads, connection status, etc.
             time.sleep(0.5)
-        self.logger.debug(f'response is {self.response_dict[cur_cmdid]}')
-        return self.response_dict[cur_cmdid]
+
+        response = self.response_dict[cur_cmdid]
+        self.logger.debug(f'response is {response}')
+        return response
 
     def get_event_state(self, params=None):
         self.event_state["scheduler"]["Event"] = "Scheduler"

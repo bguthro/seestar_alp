@@ -26,6 +26,9 @@ verbose_driver_exceptions = true
 can_reverse = true
 step_size = 1.0
 steps_per_sec = 6
+use_scopinator = false              # enable optional integration with the scopinator library when available
+scopinator_prefer = false           # if true, scopinator will be used before the native socket transport
+scopinator_timeout = 15             # seconds to wait for scopinator synchronous calls
 
 
 [seestar_initialization]
@@ -61,6 +64,8 @@ name = "Seestar Alpha"
 # ip_address should not have to be changed unless you have more than 1 seestar
 ip_address = "seestar.local"
 device_num = 1
+#use_scopinator = true             # uncomment to override the global setting for a specific device
+#scopinator_prefer = true          # uncomment to have this device prefer scopinator calls over the socket transport
 # You can specify the following settings to override those found in the seestar_initialization section on a per-device level
 #move_arm_lat_sec = 2           # start up raise arm setting for moving up/down from zenith in movement clock seconds, from -20 to 20
 #move_arm_lon_sec = 20          # start up raise arm setting for moving counter/clockwise from zenith in movement clock seconds, from -100 to 100

@@ -137,6 +137,9 @@ class _Config:
         self.can_reverse: bool = self.get_toml('device', 'can_reverse', True)
         self.step_size: float = self.get_toml('device', 'step_size', 1.0)
         self.steps_per_sec: int = self.get_toml('device', 'steps_per_sec', 6)
+        self.use_scopinator: bool = self.get_toml('device', 'use_scopinator', False)
+        self.scopinator_prefer: bool = self.get_toml('device', 'scopinator_prefer', False)
+        self.scopinator_timeout: int = self.get_toml('device', 'scopinator_timeout', 15)
         if 'seestars' in self._dict:
             self.seestars = self._dict['seestars']
         else:
@@ -161,6 +164,8 @@ class _Config:
                 for ss in self.seestars:
                     ss['device_num'] = counter
                     counter += 1
+            seestar.setdefault('use_scopinator', self.use_scopinator)
+            seestar.setdefault('scopinator_prefer', self.scopinator_prefer)
 
 
         # ---------------

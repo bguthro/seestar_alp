@@ -67,10 +67,31 @@ def start_seestar_federation(logger: logger): # type: ignore
     global seestar_federation
     seestar_federation = Seestar_Federation(logger, seestar_dev)
 
-def start_seestar_device(logger: logger, name: str, ip_address: str, port: int, device_num: int, is_EQ_mode: bool): # type: ignore
+def start_seestar_device(
+    logger: logger,
+    name: str,
+    ip_address: str,
+    port: int,
+    device_num: int,
+    is_EQ_mode: bool,
+    use_scopinator: bool,
+    scopinator_prefer: bool,
+    scopinator_timeout: int,
+):  # type: ignore
     # logger = logger
     global seestar_dev
-    seestar_dev[device_num] = Seestar(logger, ip_address, port, name, device_num, is_EQ_mode, True)
+    seestar_dev[device_num] = Seestar(
+        logger,
+        ip_address,
+        port,
+        name,
+        device_num,
+        is_EQ_mode,
+        True,
+        use_scopinator=use_scopinator,
+        scopinator_prefer=scopinator_prefer,
+        scopinator_timeout=scopinator_timeout,
+    )
     seestar_dev[device_num].start_watch_thread()
     return seestar_dev[device_num]
 

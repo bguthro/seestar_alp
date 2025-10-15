@@ -1,5 +1,10 @@
 Change Log
 
+Unreleased
+----------
+- Added optional scopinator integration with configuration toggles and runtime
+  fallbacks when the library is available.
+
 Version 1.0.0.a4 - June 22, 2024
 Added retry to connection to seestar
 

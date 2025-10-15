@@ -52,3 +52,25 @@ Github source
 Releases, and notes can be found on github at:
 <https://github.com/smart-underworld/seestar_alp/releases>
 
+## Optional scopinator integration
+
+Seestar ALP can optionally delegate certain telescope commands to the
+[scopinator](https://github.com/astrophotograph/pyscopinator) project when that
+library is installed in the Python environment.  This can help reuse existing
+client implementations or serve as a fallback transport when the native socket
+connection is unreliable.
+
+To enable the integration update `device/config.toml`:
+
+```toml
+[device]
+use_scopinator = true          # enable the dynamic integration
+scopinator_prefer = false      # leave false to prefer the built-in socket transport
+scopinator_timeout = 15        # timeout (seconds) for synchronous scopinator calls
+```
+
+The same keys can be added to individual `[[seestars]]` entries to override the
+defaults on a per-device basis.  When the module cannot be imported the driver
+falls back to the existing socket implementation and logs an informational
+message at startup.
+
