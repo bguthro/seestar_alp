@@ -1,6 +1,8 @@
 import socket
 import json
 import time
+import base64
+from pathlib import Path
 from datetime import datetime
 import threading
 import os
@@ -110,6 +112,9 @@ class Seestar:
         self.response_dict: OrderedDict[int, dict] = FixedSizeOrderedDict(max=100)
         self.logger = logger
         self.is_connected: bool = False
+        # SSL key bytes (lazy loaded)
+        self._ssl_key_pem: Optional[bytes] = None
+        self._ssl_key_password: Optional[bytes] = None
         self.is_slewing: bool = False
         self.target_dec: float = 0
         self.target_ra: float = 0
@@ -150,6 +155,115 @@ class Seestar:
         self.eventbus = signal(f"{self.device_name}.eventbus")
         self.is_EQ_mode: bool = is_EQ_mode
         # self.trace = MessageTrace(self.device_num, self.port)
+
+    def _load_ssl_key_pem(self) -> None:
+        """Load SSL key PEM from configured path if available."""
+        if self._ssl_key_pem is not None:
+            return
+        key_path = getattr(Config, "seestar_ssl_key_path", "")
+        if not key_path:
+            self.logger.debug("No seestar SSL key path configured")
+            return
+        kp = Path(key_path)
+        if not kp.is_absolute():
+            # make relative to project root (device/..)
+            kp = Path(__file__).resolve().parent.parent / kp
+        try:
+            with open(kp, "rb") as f:
+                self._ssl_key_pem = f.read()
+                self.logger.info(f"Loaded Seestar SSL key from {kp}")
+        except FileNotFoundError:
+            self.logger.warning(f"Seestar SSL key not found at {kp}")
+            self._ssl_key_pem = None
+        except Exception as e:
+            self.logger.warning(f"Failed to load SSL key at {kp}: {e}")
+            self._ssl_key_pem = None
+
+    def _sign_challenge(self, challenge_str: str) -> str:
+        """Sign the challenge string using RSA PKCS#1v1.5 + SHA1 and return base64 signature.
+
+        This mirrors the firmware 6.45+ expectation (RSA-SHA1).
+        """
+        try:
+            from cryptography.hazmat.backends import default_backend
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography.hazmat.primitives.asymmetric import padding
+        except Exception:
+            self.logger.error(
+                "cryptography library not available; install 'cryptography' to enable Seestar authentication"
+            )
+            raise
+
+        self._load_ssl_key_pem()
+        if not self._ssl_key_pem:
+            raise Exception("No SSL key PEM available for signing")
+
+        private_key = serialization.load_pem_private_key(
+            self._ssl_key_pem,
+            password=self._ssl_key_password,
+            backend=default_backend(),
+        )
+
+        signature = private_key.sign(
+            challenge_str.encode("utf-8"), padding.PKCS1v15(), hashes.SHA1()
+        )
+        return base64.b64encode(signature).decode("utf-8")
+
+    def authenticate(self) -> bool:
+        """Perform 2-step authentication expected by firmware 6.45+.
+
+        Returns True if authentication succeeded.
+        """
+        try:
+            self.logger.info("Requesting authentication challenge (get_verify_str)")
+            resp = self.send_message_param_sync({"method": "get_verify_str"})
+            challenge_str = ""
+            if isinstance(resp, dict):
+                challenge_str = resp.get("result", {}).get("str", "")
+
+            if not challenge_str:
+                self.logger.warning(f"No challenge string received: {resp}")
+                return False
+
+            self.logger.info("Signing challenge and sending verify_client")
+            signed = self._sign_challenge(challenge_str)
+            verify_params = {"sign": signed, "data": challenge_str}
+            verify_resp = self.send_message_param_sync(
+                {"method": "verify_client", "params": verify_params}
+            )
+
+            # Accept either result==0 or code==0 depending on firmware responses
+            ok = False
+            if isinstance(verify_resp, dict):
+                if verify_resp.get("result", verify_resp.get("code", -1)) == 0:
+                    ok = True
+
+            if not ok:
+                self.logger.warning(f"verify_client failed: {verify_resp}")
+                return False
+
+            # sanity check
+            try:
+                verified = self.send_message_param_sync({"method": "pi_is_verified"})
+                is_verified = (
+                    verified.get("result", {}).get("is_verified", False)
+                    if isinstance(verified, dict)
+                    else False
+                )
+                if not is_verified:
+                    self.logger.warning(
+                        f"Device did not report verified after verify_client: {verified}"
+                    )
+                    return False
+            except Exception:
+                # If we cannot check, consider auth successful because verify_client succeeded
+                self.logger.debug("pi_is_verified check failed (non-fatal)")
+
+            self.logger.info("Authentication successful")
+            return True
+        except Exception as e:
+            self.logger.warning(f"Authentication error: {e}")
+            return False
 
     # scheduler state example: {"state":"working", "schedule_id":"abcdefg",
     #       "result":0, "error":"dummy error",
@@ -275,6 +389,21 @@ class Seestar:
             self.s.connect((self.host, self.port))
             # self.s.settimeout(None)
             self.is_connected = True
+            # If a SSL key path is configured, attempt firmware 6.45+ authentication
+            try:
+                if getattr(Config, "seestar_ssl_key_path", ""):
+                    ok = self.authenticate()
+                    if not ok:
+                        self.logger.warning(
+                            "Authentication failed after connect; closing socket"
+                        )
+                        self.disconnect()
+                        return False
+            except Exception as e:
+                self.logger.warning(f"Authentication raised exception: {e}")
+                self.disconnect()
+                return False
+
             return True
         except socket.error:
             # Let's just delay a fraction of a second to avoid reconnecting too quickly
@@ -286,7 +415,7 @@ class Seestar:
             sleep(1)
             return False
 
-    def get_socket_msg(self) -> str | None:
+    def get_socket_msg(self) -> Optional[str]:
         try:
             if self.s is None:
                 self.logger.warn("socket not initialized!")

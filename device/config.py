@@ -227,6 +227,10 @@ class _Config:
         self.is_frame_calibrated: bool = self.get_toml(
             section, "is_frame_calibrated", True
         )
+        # Optional path to PEM SSL key used for Seestar firmware 6.45+ challenge-response
+        self.seestar_ssl_key_path: str = self.get_toml(
+            section, "ssl_key_path", ""
+        )
 
     def load_from_form(self, req):
         """
@@ -391,6 +395,11 @@ class _Config:
             "seestar_initialization",
             "battery_low_limit",
             int(req.media["battery_low_limit"]),
+        )
+        self.set_toml(
+            "seestar_initialization",
+            "ssl_key_path",
+            req.media["ssl_key_path"],
         )
 
     def load_toml(self, load_name=None):
@@ -897,6 +906,12 @@ class _Config:
                     "Battery low limit percentage:",
                     self.battery_low_limit,
                     "Lower limit for battery, before safe shutdown",
+                )
+                + self.render_text(
+                    "ssl_key_path",
+                    "SSL key path:",
+                    self.seestar_ssl_key_path,
+                    "Path to PEM SSL key for Seestar firmware 6.45+ authentication (e.g. /etc/seestar/seestar_client_key.pem)",
                 ),
             )
             + self.render_config_section(
