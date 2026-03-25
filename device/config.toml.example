@@ -69,6 +69,12 @@ name = "Seestar Alpha"
 # ip_address should not have to be changed unless you have more than 1 seestar
 ip_address = "seestar.local"
 device_num = 1
+# SSH tunnel for firmware 7.18+ auth bypass.
+# Loopback connections skip the RSA challenge-response gate entirely.
+# Requires passwordless SSH to be configured (e.g. ssh-copy-id pi@<ip_address>).
+# ssh_tunnel_enabled = true
+# ssh_user = "pi"
+# ssh_key_path = ""   # optional: path to SSH identity file; omit to use ~/.ssh default
 #[[seestars]]
 #name = "Seestar Beta"
 #ip_address = "192.168.110.36"

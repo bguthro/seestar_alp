@@ -77,10 +77,13 @@ def start_seestar_device(
     ip_address: str,
     port: int,
     device_num: int,
+    ssh_config: dict = None,
 ):  # type: ignore
     # logger = logger
     global seestar_dev
-    seestar_dev[device_num] = Seestar(logger, ip_address, port, name, device_num, True)
+    seestar_dev[device_num] = Seestar(
+        logger, ip_address, port, name, device_num, True, ssh_config=ssh_config
+    )
     seestar_dev[device_num].start_watch_thread()
     return seestar_dev[device_num]
 

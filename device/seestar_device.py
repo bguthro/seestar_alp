@@ -26,6 +26,7 @@ from pyhocon import ConfigFactory
 
 from device.abstract_device import MessageParams, StartStackParams, Schedule
 from device.config import Config
+from device.ssh_tunnel import SshTunnel
 from device.version import Version  # type: ignore
 from device.seestar_util import Util
 from device.event_callbacks import *
@@ -87,6 +88,7 @@ class Seestar:
         device_name: str,
         device_num: int,
         is_debug=False,
+        ssh_config: Optional[dict] = None,
     ):
         logger.info(
             f"Initialize the new instance of Seestar: {host}:{port}, name:{device_name}, num:{device_num}, is_debug:{is_debug}"
@@ -113,6 +115,15 @@ class Seestar:
         self.response_dict: OrderedDict[int, dict] = FixedSizeOrderedDict(max=100)
         self.logger = logger
         self.is_connected: bool = False
+        # SSH tunnel (optional, for firmware 7.18+ auth bypass via loopback)
+        self._ssh_tunnel: Optional[SshTunnel] = None
+        if ssh_config and ssh_config.get("enabled"):
+            self._ssh_tunnel = SshTunnel(
+                logger,
+                ssh_host=host,
+                ssh_user=ssh_config.get("user", "pi"),
+                ssh_key_path=ssh_config.get("key_path", ""),
+            )
         # SSL key bytes (lazy loaded)
         self._ssl_key_pem: Optional[bytes] = None
         self._ssl_key_password: Optional[bytes] = None
@@ -332,6 +343,8 @@ class Seestar:
         # Disconnect tries to clean up the socket if it exists
         self.is_connected = False
         self.socket_force_close()
+        if self._ssh_tunnel is not None:
+            self._ssh_tunnel.stop()
 
     def send_udp_intro(self) -> None:
         # {"id":1,"method":"scan_iscope","params":""}
@@ -383,10 +396,20 @@ class Seestar:
             # send a udp message to satisfy seestar's guest mode to gain control properly
             self.send_udp_intro()
 
+            # If SSH tunnel is configured, start it and connect through localhost.
+            # The firmware auth gate (7.18+) skips RSA verification for loopback connections.
+            if self._ssh_tunnel is not None:
+                if not self._ssh_tunnel.start(remote_port=self.port):
+                    self.logger.warning("SSH tunnel failed to start; cannot connect")
+                    return False
+                connect_host, connect_port = "127.0.0.1", self._ssh_tunnel.local_port
+            else:
+                connect_host, connect_port = self.host, self.port
+
             # note: the below isn't thread safe!  (Reconnect can be called from different threads.)
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.settimeout(Config.timeout)
-            self.s.connect((self.host, self.port))
+            self.s.connect((connect_host, connect_port))
             # self.s.settimeout(None)
             self.is_connected = True
             # If a SSL key path is configured, attempt firmware 6.45+ authentication

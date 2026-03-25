@@ -243,12 +243,20 @@ class DeviceMain:
         telescope.start_seestar_federation(logger)
 
         for dev in Config.seestars:
+            ssh_config = None
+            if dev.get("ssh_tunnel_enabled"):
+                ssh_config = {
+                    "enabled": True,
+                    "user": dev.get("ssh_user", "pi"),
+                    "key_path": dev.get("ssh_key_path", ""),
+                }
             controller = telescope.start_seestar_device(
                 logger,
                 dev["name"],
                 dev["ip_address"],
                 4700,
                 dev["device_num"],
+                ssh_config=ssh_config,
             )
             # Don't start the imaging or log collector if this is a simulator
             simulator = dev.get("simulator", False)
