@@ -15,9 +15,12 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # Resolve uv binary
-PIP="$APP_DIR/.venv/bin/pip"
-if [ ! -x "$PIP" ]; then
-    echo "Error: $PIP not found. Is seestar-alp installed?" >&2
+if command -v uv >/dev/null 2>&1; then
+    UV=uv
+elif [ -x "$APP_DIR/.local/bin/uv" ]; then
+    UV="$APP_DIR/.local/bin/uv"
+else
+    echo "Error: uv not found. Please re-install the seestar-alp package." >&2
     exit 1
 fi
 
@@ -25,8 +28,9 @@ echo "Installing system packages..."
 apt-get install -y git indi-bin
 
 echo "Installing INDI Python dependencies..."
-su -s /bin/sh "$SEESTAR_USER" -c "
-    '$PIP' install -r '$APP_DIR/requirements-indi.txt'
+HOME="$APP_DIR" su -s /bin/sh "$SEESTAR_USER" -c "
+    '$UV' pip install --python '$APP_DIR/.venv/bin/python' \
+        -r '$APP_DIR/requirements-indi.txt'
 "
 
 echo "Enabling INDI service..."

@@ -147,62 +147,21 @@ fi
 echo "$APP_VERSION" > "$APP/device/version.txt"
 
 # ---------------------------------------------------------------------------
-# Build Python virtual environment
-# Pre-building the venv means the install target needs no network access,
-# no uv, and no build tools.  uv downloads a standalone Python 3.13 into
-# .python/ and installs all deps into .venv/.  Both are path-patched from
-# the staging directory to the final install path before packaging.
-#
-# NOTE: The venv Python binary is architecture-specific.  Build on the
-#       same architecture as the install target; cross-compilation is not
-#       supported.
+# Bundle uv binary for the target architecture
+# Downloading at install time requires working SSL and network access.
+# Bundling it avoids both problems and makes offline installs possible.
 # ---------------------------------------------------------------------------
-echo "Building Python virtual environment..."
-
-if ! command -v uv >/dev/null 2>&1; then
-    echo "Error: uv not found on build host. Install from https://docs.astral.sh/uv/" >&2
-    exit 1
-fi
-
-# Warn if ARCH differs from host — venv Python will be wrong architecture.
-HOST_ARCH=$(uname -m)
-case "$HOST_ARCH" in
-    aarch64) HOST_DEB_ARCH=arm64 ;;
-    armv7l)  HOST_DEB_ARCH=armhf ;;
-    x86_64)  HOST_DEB_ARCH=amd64 ;;
-    *)       HOST_DEB_ARCH="$HOST_ARCH" ;;
+echo "Bundling uv..."
+case "$ARCH" in
+    amd64) UV_ARCH="x86_64-unknown-linux-gnu" ;;
+    arm64) UV_ARCH="aarch64-unknown-linux-gnu" ;;
+    armhf) UV_ARCH="armv7-unknown-linux-gnueabihf" ;;
+    *)     echo "No uv binary known for arch: $ARCH"; exit 1 ;;
 esac
-if [ "$ARCH" != "$HOST_DEB_ARCH" ]; then
-    echo "WARNING: targeting ARCH=${ARCH} but build host is ${HOST_DEB_ARCH}." >&2
-    echo "         The Python binary in the venv will be for ${HOST_DEB_ARCH}." >&2
-fi
-
-UV_PYTHON_INSTALL_DIR="$APP/.python" \
-UV_CACHE_DIR="$APP/.cache/uv" \
-    uv venv --python 3.13 "$APP/.venv"
-
-UV_PYTHON_INSTALL_DIR="$APP/.python" \
-UV_CACHE_DIR="$APP/.cache/uv" \
-    uv pip install --python "$APP/.venv/bin/python" \
-        -r "$REPO_ROOT/requirements.txt"
-
-# Remove the uv download cache — not needed in the installed package.
-rm -rf "$APP/.cache"
-
-# Patch staging paths → final install path so the venv works after dpkg
-# extracts it.  Handle symlinks separately (ln -sfn), then fix text files
-# (scripts, .pth files, RECORD files, etc.) with sed.
-FINAL_INSTALL=/opt/seestar_alp
-echo "Patching venv paths..."
-find "$APP/.venv" "$APP/.python" -type l | while read -r link; do
-    target=$(readlink "$link")
-    if [[ "$target" == "$APP"* ]]; then
-        ln -sfn "${FINAL_INSTALL}${target#$APP}" "$link"
-    fi
-done
-grep -rlI "$APP" "$APP/.venv" "$APP/.python" 2>/dev/null | while read -r f; do
-    sed -i "s|$APP|$FINAL_INSTALL|g" "$f"
-done
+mkdir -p "$APP/.local/bin"
+curl -LsSf "https://github.com/astral-sh/uv/releases/latest/download/uv-${UV_ARCH}.tar.gz" \
+    | tar -xz --strip-components=1 -C "$APP/.local/bin" \
+        "uv-${UV_ARCH}/uv" "uv-${UV_ARCH}/uvx"
 
 chmod +x "$APP/linux/deb/enable-indi.sh"
 
