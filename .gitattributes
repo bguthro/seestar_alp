@@ -1,0 +1,41 @@
+# Files and directories with export-ignore are excluded from git archive
+# (and therefore from the .deb package built by linux/deb/build-deb.sh).
+
+# Developer tooling and editor config
+.claude/            export-ignore
+.github/            export-ignore
+.vscode/            export-ignore
+.editorconfig       export-ignore
+.dockerignore       export-ignore
+
+# Test and development infrastructure
+tests/              export-ignore
+simulator/          export-ignore
+bruno/              export-ignore
+thunder-tests/      export-ignore
+docker/             export-ignore
+
+# Platform-specific setup (not needed in installed package)
+mac/                export-ignore
+raspberry_pi/       export-ignore
+
+# Code generation templates
+templates/          export-ignore
+alpaca-device.mustache export-ignore
+
+# Documentation and notes
+doc/                export-ignore
+README.md           export-ignore
+README-AlpacaDevice.md export-ignore
+AGENTS.md           export-ignore
+change_log.txt      export-ignore
+Bruno_notes         export-ignore
+"Current ConformU Protocol.txt" export-ignore
+"Current ConformU Validation.txt" export-ignore
+"Seestar Alpaca API.json" export-ignore
+
+# Standalone utility scripts (not imported by the app)
+scripts/            export-ignore
+
+# Dependency snapshot (development reference only)
+requirements_full_overload.txt export-ignore
