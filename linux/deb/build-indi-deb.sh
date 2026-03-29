@@ -126,20 +126,28 @@ set -e
 APP_DIR=/opt/seestar_alp
 SEESTAR_USER=seestar
 
-if command -v uv >/dev/null 2>&1; then
-    UV=uv
-elif [ -x "\$APP_DIR/.local/bin/uv" ]; then
-    UV="\$APP_DIR/.local/bin/uv"
-else
-    echo "Error: uv not found. Is seestar-alp installed?" >&2
-    exit 1
-fi
-
 echo "Installing INDI Python dependencies..."
-HOME="\$APP_DIR" su -s /bin/sh "\$SEESTAR_USER" -c "
-    '\$UV' pip install --python '\$APP_DIR/.venv/bin/python' \\
-        '${PYINDI_REQ}' '${TOML_DEP}'
-"
+if [ -x "\$APP_DIR/.venv/bin/pip" ]; then
+    # venv was pre-built with --seed; pip is available — no extra tooling needed
+    HOME="\$APP_DIR" su -s /bin/sh "\$SEESTAR_USER" -c "
+        '\$APP_DIR/.venv/bin/pip' install \\
+            '${PYINDI_REQ}' '${TOML_DEP}'
+    "
+else
+    # Fallback: runtime uv install (non-Docker package builds)
+    if command -v uv >/dev/null 2>&1; then
+        UV=uv
+    elif [ -x "\$APP_DIR/.local/bin/uv" ]; then
+        UV="\$APP_DIR/.local/bin/uv"
+    else
+        echo "Error: uv not found. Is seestar-alp installed?" >&2
+        exit 1
+    fi
+    HOME="\$APP_DIR" su -s /bin/sh "\$SEESTAR_USER" -c "
+        '\$UV' pip install --python '\$APP_DIR/.venv/bin/python' \\
+            '${PYINDI_REQ}' '${TOML_DEP}'
+    "
+fi
 
 systemctl daemon-reload
 systemctl enable INDI.service

@@ -1,0 +1,33 @@
+# Build a Python venv for the target architecture.
+#
+# Used by build-deb.sh via Docker buildx so arm64/armhf venvs can be built
+# on an x86_64 host (or vice-versa) without native hardware.
+#
+# Build context: repo root  (requirements.txt must be at the root)
+# Output:        /opt/seestar_alp/.venv
+#
+# Usage (from build-deb.sh):
+#   docker buildx build \
+#     --platform linux/arm64 \
+#     --file linux/deb/Dockerfile.venv \
+#     --output "type=local,dest=$STAGE" \
+#     .
+
+FROM python:3.13-slim-bookworm AS builder
+
+# requirements.txt is at the repo root (the build context)
+COPY requirements.txt /build/requirements.txt
+
+# --copies: embed the Python interpreter inside the venv so it is self-contained
+# on the target (no system Python required).  pip is included by default.
+# --upgrade-deps: pull the latest pip/setuptools into the venv.
+RUN python -m venv --copies --upgrade-deps /opt/seestar_alp/.venv \
+ && /opt/seestar_alp/.venv/bin/pip install \
+        --no-cache-dir \
+        -r /build/requirements.txt
+
+# Minimal export stage — only ship the venv.
+# `docker buildx build --output type=local,dest=$STAGE` will extract this to
+# $STAGE/opt/seestar_alp/.venv, which equals $APP/.venv.
+FROM scratch
+COPY --from=builder /opt/seestar_alp/.venv /opt/seestar_alp/.venv

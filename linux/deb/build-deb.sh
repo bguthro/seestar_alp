@@ -147,21 +147,62 @@ fi
 echo "$APP_VERSION" > "$APP/device/version.txt"
 
 # ---------------------------------------------------------------------------
-# Bundle uv binary for the target architecture
-# Downloading at install time requires working SSL and network access.
-# Bundling it avoids both problems and makes offline installs possible.
+# Python venv — pre-built via Docker buildx (preferred) or bundled uv (fallback)
+#
+# Docker buildx path (CI and capable dev machines):
+#   Builds the venv inside a container for the exact target arch using QEMU.
+#   The result lands at $APP/.venv and $APP/.python. pip is available in the
+#   venv (uv --seed) so enable-indi.sh can add INDI deps post-install without
+#   needing uv on the target.
+#
+# Fallback path (no Docker):
+#   Bundle the uv binary so postinst can create the venv at install time.
 # ---------------------------------------------------------------------------
-echo "Bundling uv..."
 case "$ARCH" in
-    amd64) UV_ARCH="x86_64-unknown-linux-gnu" ;;
-    arm64) UV_ARCH="aarch64-unknown-linux-gnu" ;;
-    armhf) UV_ARCH="armv7-unknown-linux-gnueabihf" ;;
-    *)     echo "No uv binary known for arch: $ARCH"; exit 1 ;;
+    amd64) PLATFORM="linux/amd64"  ; UV_ARCH="x86_64-unknown-linux-gnu" ;;
+    arm64) PLATFORM="linux/arm64"  ; UV_ARCH="aarch64-unknown-linux-gnu" ;;
+    armhf) PLATFORM="linux/arm/v7" ; UV_ARCH="armv7-unknown-linux-gnueabihf" ;;
+    *)     echo "Unsupported arch: $ARCH"; exit 1 ;;
 esac
-mkdir -p "$APP/.local/bin"
-curl -LsSf "https://github.com/astral-sh/uv/releases/latest/download/uv-${UV_ARCH}.tar.gz" \
-    | tar -xz --strip-components=1 -C "$APP/.local/bin" \
-        "uv-${UV_ARCH}/uv" "uv-${UV_ARCH}/uvx"
+
+BUILT_VENV=false
+# Docker buildx pre-builds the venv for the target arch, enabling cross-compilation.
+#
+# Exception: Raspberry Pi 5 uses a 16 KB kernel page size; standard Docker images
+# are compiled for 4 KB pages and crash when run natively on Pi 5.  Cross-compiled
+# containers (e.g. armhf on an arm64 host) run under QEMU which handles the page
+# size correctly, so Docker is still used for those.
+PAGE_SIZE=$(getconf PAGE_SIZE 2>/dev/null || echo 4096)
+NATIVE_ARCH=$(uname -m)
+case "$NATIVE_ARCH" in
+    aarch64) NATIVE_ARCH="arm64" ;;
+    armv7l)  NATIVE_ARCH="armhf" ;;
+    x86_64)  NATIVE_ARCH="amd64" ;;
+esac
+if [ "$PAGE_SIZE" != "4096" ] && [ "$ARCH" = "$NATIVE_ARCH" ]; then
+    echo "Native build on non-standard page size kernel (${PAGE_SIZE}B) — skipping Docker buildx, bundling uv instead."
+elif docker info >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then
+    echo "Pre-building Python venv for $ARCH via Docker buildx (this may take a few minutes)..."
+    if docker buildx build \
+            --platform "$PLATFORM" \
+            --file "$SCRIPT_DIR/Dockerfile.venv" \
+            --network host \
+            --output type=tar,dest=out.tar \
+            "$REPO_ROOT" && tar -xvf out.tar -C "$STAGE"; then
+        echo "Venv built."
+        BUILT_VENV=true
+    else
+        echo "Docker buildx build failed — falling back to bundled uv..."
+    fi
+fi
+
+if [ "$BUILT_VENV" = false ]; then
+    echo "Bundling uv for runtime venv installation..."
+    mkdir -p "$APP/.local/bin"
+    curl -LsSf "https://github.com/astral-sh/uv/releases/latest/download/uv-${UV_ARCH}.tar.gz" \
+        | tar -xz --strip-components=1 -C "$APP/.local/bin" \
+            "uv-${UV_ARCH}/uv" "uv-${UV_ARCH}/uvx"
+fi
 
 chmod +x "$APP/linux/deb/enable-indi.sh"
 

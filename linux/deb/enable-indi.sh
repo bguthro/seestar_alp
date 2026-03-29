@@ -14,24 +14,31 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Resolve uv binary
-if command -v uv >/dev/null 2>&1; then
-    UV=uv
-elif [ -x "$APP_DIR/.local/bin/uv" ]; then
-    UV="$APP_DIR/.local/bin/uv"
-else
-    echo "Error: uv not found. Please re-install the seestar-alp package." >&2
-    exit 1
-fi
-
 echo "Installing system packages..."
 apt-get install -y git indi-bin
 
 echo "Installing INDI Python dependencies..."
-HOME="$APP_DIR" su -s /bin/sh "$SEESTAR_USER" -c "
-    '$UV' pip install --python '$APP_DIR/.venv/bin/python' \
-        -r '$APP_DIR/requirements-indi.txt'
-"
+if [ -x "$APP_DIR/.venv/bin/pip" ]; then
+    # venv was pre-built with --seed; pip is available — no extra tooling needed
+    HOME="$APP_DIR" su -s /bin/sh "$SEESTAR_USER" -c "
+        '$APP_DIR/.venv/bin/pip' install \
+            -r '$APP_DIR/requirements-indi.txt'
+    "
+else
+    # Fallback: runtime uv install (non-Docker package builds)
+    if command -v uv >/dev/null 2>&1; then
+        UV=uv
+    elif [ -x "$APP_DIR/.local/bin/uv" ]; then
+        UV="$APP_DIR/.local/bin/uv"
+    else
+        echo "Error: uv not found. Please re-install the seestar-alp package." >&2
+        exit 1
+    fi
+    HOME="$APP_DIR" su -s /bin/sh "$SEESTAR_USER" -c "
+        '$UV' pip install --python '$APP_DIR/.venv/bin/python' \
+            -r '$APP_DIR/requirements-indi.txt'
+    "
+fi
 
 echo "Enabling INDI service..."
 systemctl enable INDI.service
