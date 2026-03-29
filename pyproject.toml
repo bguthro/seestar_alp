@@ -19,25 +19,26 @@ dependencies = [
     "jinja2==3.1.4",
     "numpy==1.26.4",
     "opencv-python==4.10.0.84",
-    "pandas==2.2.3",
     "pillow==10.4.0",
     "pydantic>=2.11.3",
     "pydash==8.0.3",
     "pyhocon==0.3.61",
-    "pyindi",
     "pytz==2022.7.1",
     "pyyaml~=6.0.1",
     "requests~=2.32.3",
-    "ruff==0.11.6",
     "scikit-image==0.24.0",
-    "scipy~=1.14.0",
     "sdnotify==0.3.2",
     "skyfield==1.49",
-    "toml==0.10.2",
     "tomlkit==0.13.2",
     "tzlocal==5.2",
     "waitress==3.0.0",
     "watchdog==5.0.2",
+]
+
+[project.optional-dependencies]
+indi = [
+    "pyindi",
+    "toml==0.10.2",
 ]
 
 [tool.uv.sources]
@@ -71,6 +72,7 @@ dev = [
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
     "pytest-mock>=3.14.0",
+    "ruff==0.11.6",
 ]
 
 [tool.pytest.ini_options]

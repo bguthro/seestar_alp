@@ -34,7 +34,7 @@ function install_apt_packages {
           libsqlite3-dev llvm libncurses-dev \
           xz-utils tk-dev libgdbm-dev lzma tcl-dev \
           libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev \
-          wget curl make build-essential openssl libgl1 indi-bin
+          wget curl make build-essential openssl libgl1
   else
       # bookworm
       sudo apt-get install --yes software-properties-common \
@@ -42,8 +42,26 @@ function install_apt_packages {
           libsqlite3-dev llvm libncurses5-dev libncursesw5-dev \
           xz-utils tk-dev libgdbm-dev lzma lzma-dev tcl-dev \
           libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev \
-          wget curl make build-essential openssl libgl1 indi-bin
+          wget curl make build-essential openssl libgl1
   fi
+}
+
+function install_indi_extra {
+  echo "Installing INDI support..."
+  sudo apt-get install --yes indi-bin
+  pip install -r "$src_home/requirements-indi.txt"
+
+  cat "$src_home/raspberry_pi/systemd/INDI.service" | sed \
+  -e "s|/home/.*/seestar_alp|$src_home|g" \
+  -e "s|^ExecStartPost=python3|ExecStartPost=$HOME/.pyenv/versions/ssc-3.13.5/bin/python3|" \
+  -e "s|^User=.*|User=${user}|g" > /tmp/INDI.service
+
+  sudo chown root:root /tmp/INDI.service
+  sudo mv /tmp/INDI.service /etc/systemd/system
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable INDI
+  sudo systemctl start INDI
 }
 
 function config_toml_setup {
@@ -113,25 +131,14 @@ function systemd_service_setup {
   -e "s|^User=.*|User=${user}|g" \
   -e "s|^ExecStart=.*|ExecStart=$HOME/.pyenv/versions/ssc-3.13.5/bin/python3 $src_home/root_app.py|" > /tmp/seestar.service
 
-  cat systemd/INDI.service | sed \
-  -e "s|/home/.*/seestar_alp|$src_home|g" \
-  -e "s|^ExecStartPost=python3|ExecStartPost=$HOME/.pyenv/versions/ssc-3.13.5/bin/python3|" \
-  -e "s|^User=.*|User=${user}|g" > /tmp/INDI.service
-
-  sudo chown root:root /tmp/seestar.service /tmp/INDI.service /tmp/seestar.env
+  sudo chown root:root /tmp/seestar.service /tmp/seestar.env
   sudo mv /tmp/seestar.service /etc/systemd/system
-  sudo mv /tmp/INDI.service /etc/systemd/system
   sudo mv /tmp/seestar.env /etc
 
   sudo systemctl daemon-reload
 
   sudo systemctl enable seestar
   sudo systemctl start seestar
-
-  sudo systemctl enable INDI
-  sudo systemctl start INDI
-
-  # INDI service left disabled
 
   if ! $(systemctl is-active --quiet seestar); then
     echo "ERROR: seestar service is not running"
@@ -161,11 +168,12 @@ $(printf "| %-36s|" "http://${host}.local:5432")
 |                                     |
 | Systemd logs can be viewed via      |
 | journalctl -u seestar               |
-| journalctl -u INDI                  |
 |                                     |
 | Current status can be viewed via    |
 | systemctl status seestar            |
-| systemctl status INDI               |
+|                                     |
+| Optional INDI support:              |
+|  Re-run with --with-indi            |
 |-------------------------------------|
 _EOF
 }
@@ -174,6 +182,14 @@ _EOF
 # main setup script
 #
 function setup() {
+  # Parse flags
+  WITH_INDI=false
+  for arg in "$@"; do
+    case "$arg" in
+      --with-indi) WITH_INDI=true ;;
+    esac
+  done
+
   validate_access
 
   if [ -e seestar_alp ] || [ -e ~/seestar_alp ]; then
@@ -195,6 +211,11 @@ function setup() {
   python_virtualenv_setup
   network_config
   systemd_service_setup
+
+  if [ "$WITH_INDI" = true ]; then
+    install_indi_extra
+  fi
+
   print_banner "setup"
 }
 
@@ -203,5 +224,5 @@ function setup() {
 #
 (return 0 2>/dev/null) && sourced=1 || sourced=0
 if [ ${sourced} = 0 ]; then
-  setup
+  setup "$@"
 fi

@@ -8,13 +8,45 @@
 #   Version defaults to the value in pyproject.toml.
 #
 # Prerequisites (on the build host):
-#   dpkg-deb, rsync
+#   dpkg-deb, git
 #
 # The resulting .deb installs the application to /opt/seestar_alp and manages
-# it via two systemd services (seestar and INDI).  Python dependencies are
-# resolved at install time using uv, so no pre-built wheel cache is needed.
+# it via a systemd service (seestar).  Python dependencies are resolved at
+# install time using uv.  Optional INDI support can be enabled post-install
+# by running linux/deb/enable-indi.sh.
 
 set -euo pipefail
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS] [VERSION]
+
+Build a seestar-alp .deb package.
+
+Arguments:
+  VERSION       Package version (e.g. 1.2.3 or v1.2.3).
+                Defaults to the output of git describe, falling back to
+                the version in pyproject.toml.
+
+Options:
+  -h, --help    Show this help message and exit.
+
+Environment:
+  ARCH          Target Debian architecture (amd64, arm64, armhf).
+                Defaults to the host architecture.
+
+Examples:
+  ./linux/deb/build-deb.sh                  # auto-version from git
+  ./linux/deb/build-deb.sh 1.2.3            # explicit version
+  ARCH=armhf ./linux/deb/build-deb.sh       # cross-build for Raspberry Pi (32 bit)
+EOF
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help) usage; exit 0 ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -89,38 +121,14 @@ mkdir -p "$APP" "$SYSTEMD" "$SYSCTL" "$ETCSEESTAR" "$DEBIAN"
 
 # ---------------------------------------------------------------------------
 # Copy application source
-# Exclude: venv, git internals, caches, test fixtures, build artefacts,
-#          runtime-generated files, and developer tooling.
+# Use git archive so only tracked, committed files are included — no local
+# artifacts, untracked files, or developer debris can sneak into the package.
+# Warn if there are uncommitted changes to tracked files that would be missed.
 # ---------------------------------------------------------------------------
-rsync -a --delete \
-    --exclude='.git/' \
-    --exclude='.venv/' \
-    --exclude='.pyenv/' \
-    --exclude='node_modules/' \
-    --exclude='__pycache__/' \
-    --exclude='*.pyc' \
-    --exclude='*.pyo' \
-    --exclude='.pytest_cache/' \
-    --exclude='.ruff_cache/' \
-    --exclude='.mypy_cache/' \
-    --exclude='logs/' \
-    --exclude='*.db' \
-    --exclude='*.db-journal' \
-    --exclude='.vscode/' \
-    --exclude='.claude/' \
-    --exclude='.codex/' \
-    --exclude='.copilot/' \
-    --exclude='tests/' \
-    --exclude='simulator/' \
-    --exclude='decompiles/' \
-    --exclude='bruno/' \
-    --exclude='thunder-tests/' \
-    --exclude='doc/' \
-    --exclude='mac/' \
-    --exclude='deb/' \
-    --exclude='*.deb' \
-    --exclude='*.patch' \
-    "$REPO_ROOT/" "$APP/"
+if ! git diff --quiet HEAD; then
+    echo "WARNING: uncommitted changes to tracked files will NOT be included in the package." >&2
+fi
+git archive HEAD | tar -x -C "$APP"
 
 # Remove any config.toml that may be present — the postinst generates it
 # from config.toml.example so that upgrades don't overwrite user edits.
@@ -156,21 +164,40 @@ curl -LsSf "https://github.com/astral-sh/uv/releases/latest/download/uv-${UV_ARC
         "uv-${UV_ARCH}/uv" "uv-${UV_ARCH}/uvx"
 
 # ---------------------------------------------------------------------------
-# Pre-build pyindi wheel
-# pyindi is specified as a git URL in requirements.txt, so git is required on
-# the build host but not on the install target.  The resulting wheel is
-# architecture-independent (pure Python) and is bundled into the package.
+# Pre-build pyindi wheel (for optional INDI support)
+# pyindi is a git dependency so git is required on the build host but not on
+# the install target.  The wheel is bundled so enable-indi.sh can install INDI
+# support offline without needing git on the target machine.
 # ---------------------------------------------------------------------------
-echo "Pre-building pyindi wheel..."
-PYINDI_REQ=$(grep '^pyindi' "$REPO_ROOT/requirements.txt")
+echo "Pre-building pyindi wheel for optional INDI support..."
+PYINDI_REQ=$(python3 -c "
+import tomllib
+with open('pyproject.toml', 'rb') as f:
+    config = tomllib.load(f)
+src = config['tool']['uv']['sources']['pyindi']
+print(f'pyindi @ git+{src[\"git\"]}@{src[\"rev\"]}')
+")
+TOML_DEP=$(python3 -c "
+import tomllib
+with open('pyproject.toml', 'rb') as f:
+    config = tomllib.load(f)
+for dep in config['project']['optional-dependencies']['indi']:
+    if dep.startswith('toml'):
+        print(dep)
+        break
+")
 mkdir -p "$APP/wheels"
 python3 -m pip wheel --no-deps --wheel-dir "$APP/wheels" "$PYINDI_REQ" 2>&1 | tail -3
 
-# Rewrite requirements.txt to reference the bundled wheel via a file:// URL
-# so uv does not need git on the install target.
+# Write requirements-indi.txt referencing the bundled wheel so enable-indi.sh
+# can install INDI deps without git on the target machine.
 PYINDI_WHEEL=$(basename "$APP/wheels"/pyindi*.whl)
-sed "s|^pyindi.*|pyindi @ file:///opt/seestar_alp/wheels/${PYINDI_WHEEL}|" \
-    "$REPO_ROOT/requirements.txt" > "$APP/requirements.txt"
+cat > "$APP/requirements-indi.txt" <<EOF
+pyindi @ file:///opt/seestar_alp/wheels/${PYINDI_WHEEL}
+${TOML_DEP}
+EOF
+
+chmod +x "$APP/linux/deb/enable-indi.sh"
 
 # ---------------------------------------------------------------------------
 # Systemd service units
@@ -213,15 +240,18 @@ Section: science
 Priority: optional
 Architecture: ${ARCH}
 Installed-Size: ${INSTALLED_SIZE}
-Depends: rsync, libxml2-dev, libxslt1-dev
-Recommends: avahi-daemon, indi-bin
+Depends: libxml2-dev, libxslt1-dev
+Recommends: avahi-daemon
 Maintainer: smart-underworld <https://github.com/smart-underworld/seestar_alp>
 Homepage: https://github.com/smart-underworld/seestar_alp
 Description: Seestar ALP telescope controller
- ALPACA/INDI bridge and web interface for ZWO Seestar smart telescopes.
- Runs as a pair of systemd services (seestar, INDI) accessible from any
- device on the local network.  Python dependencies are managed with uv
- and installed into an isolated virtual environment at install time.
+ ALPACA bridge and web interface for ZWO Seestar smart telescopes.
+ Runs as a systemd service accessible from any device on the local network.
+ Python dependencies are managed with uv and installed into an isolated
+ virtual environment at install time.
+ .
+ Optional INDI support can be enabled after install by running:
+   sudo /opt/seestar_alp/linux/deb/enable-indi.sh
 EOF
 
 # ---------------------------------------------------------------------------

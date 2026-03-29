@@ -81,10 +81,6 @@ systemctl daemon-reload
 systemctl enable seestar.service
 systemctl restart seestar.service
 
-# The INDI service is installed but left disabled — enable it manually if needed:
-#   systemctl enable INDI.service && systemctl start INDI.service
-systemctl disable INDI.service 2>/dev/null || true
-
 HOSTNAME=$(hostname -I 2>/dev/null | awk '{print $1}' || hostname)
 echo ""
 echo "|---------------------------------------------|"
@@ -95,4 +91,8 @@ echo "|                                             |"
 echo "| Logs:   journalctl -u seestar               |"
 echo "| Status: systemctl status seestar            |"
 echo "| Config: /etc/seestar/config.toml            |"
+echo "|                                             |"
+echo "| Optional INDI support:                      |"
+echo "|  sudo /opt/seestar_alp/linux/deb/           |"
+echo "|       enable-indi.sh                        |"
 echo "|---------------------------------------------|"

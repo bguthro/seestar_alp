@@ -25,10 +25,11 @@ jobs:
         with:
           python-version: 3.13
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Install backend dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-mock
+        run: uv sync --group dev
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -36,16 +37,16 @@ jobs:
           node-version: 20
 
       - name: Run lint checks
-        run: ruff check
+        run: uv run ruff check
 
       - name: Run format checks
-        run: ruff format --check
+        run: uv run ruff format --check
 
       - name: Run backend tests
-        run: pytest -m "not integration" --cov=device --cov=front --cov-report=term --cov-fail-under=30.0 -q
+        run: uv run pytest -m "not integration" --cov=device --cov=front --cov-report=term --cov-fail-under=30.0 -q
 
       - name: Run simulator integration tests
-        run: pytest -m integration tests/integration -q
+        run: uv run pytest -m integration tests/integration -q
 
       - name: Install frontend test dependencies
         run: npm ci
