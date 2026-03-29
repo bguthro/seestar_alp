@@ -24,8 +24,8 @@ else
     exit 1
 fi
 
-echo "Installing indi-bin system package..."
-apt-get install -y indi-bin
+echo "Installing system packages..."
+apt-get install -y git indi-bin
 
 echo "Installing INDI Python dependencies..."
 HOME="$APP_DIR" su -s /bin/sh "$SEESTAR_USER" -c "

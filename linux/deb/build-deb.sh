@@ -163,40 +163,6 @@ curl -LsSf "https://github.com/astral-sh/uv/releases/latest/download/uv-${UV_ARC
     | tar -xz --strip-components=1 -C "$APP/.local/bin" \
         "uv-${UV_ARCH}/uv" "uv-${UV_ARCH}/uvx"
 
-# ---------------------------------------------------------------------------
-# Pre-build pyindi wheel (for optional INDI support)
-# pyindi is a git dependency so git is required on the build host but not on
-# the install target.  The wheel is bundled so enable-indi.sh can install INDI
-# support offline without needing git on the target machine.
-# ---------------------------------------------------------------------------
-echo "Pre-building pyindi wheel for optional INDI support..."
-PYINDI_REQ=$(python3 -c "
-import tomllib
-with open('pyproject.toml', 'rb') as f:
-    config = tomllib.load(f)
-src = config['tool']['uv']['sources']['pyindi']
-print(f'pyindi @ git+{src[\"git\"]}@{src[\"rev\"]}')
-")
-TOML_DEP=$(python3 -c "
-import tomllib
-with open('pyproject.toml', 'rb') as f:
-    config = tomllib.load(f)
-for dep in config['project']['optional-dependencies']['indi']:
-    if dep.startswith('toml'):
-        print(dep)
-        break
-")
-mkdir -p "$APP/wheels"
-python3 -m pip wheel --no-deps --wheel-dir "$APP/wheels" "$PYINDI_REQ" 2>&1 | tail -3
-
-# Write requirements-indi.txt referencing the bundled wheel so enable-indi.sh
-# can install INDI deps without git on the target machine.
-PYINDI_WHEEL=$(basename "$APP/wheels"/pyindi*.whl)
-cat > "$APP/requirements-indi.txt" <<EOF
-pyindi @ file:///opt/seestar_alp/wheels/${PYINDI_WHEEL}
-${TOML_DEP}
-EOF
-
 chmod +x "$APP/linux/deb/enable-indi.sh"
 
 # ---------------------------------------------------------------------------
